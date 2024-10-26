@@ -7,11 +7,21 @@ use std::error::Error;
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 
+use colored::customcolors::CustomColor;
+
 #[derive(Deserialize, Serialize, Debug)]
 struct UpdateInfo {
     version: String,
     url: String,
 }
+
+const UPDATE_CHECK_URL: &str = "https://howdyho.net/discord/version.php";
+const MATERIAL_PAGE_URL: &str = "https://howdyho.net/windows-software/discord-fix-snova-rabotayushij-diskord-vojs-zvonki";
+
+const ORANGE: CustomColor = CustomColor { r: 252, g: 197, b: 108 };
+const GREEN: CustomColor = CustomColor { r: 126, g: 176, b: 0 };
+const BLUE: CustomColor = CustomColor { r: 87, g: 170, b: 247 };
+const MAGENTA: CustomColor = CustomColor { r: 196, g: 124, b: 186 };
 
 fn compare_versions(v1: &str, v2: &str) -> bool {
     let v1_parts: Vec<u32> = v1.split('.')
@@ -43,10 +53,8 @@ async fn download_file(client: &reqwest::Client, url: &str, pb: &ProgressBar) ->
 }
 
 async fn check_and_update() -> Result<(), Box<dyn Error>> {
-    let check_url = "https://howdyho.net/discord/version.php";
-
     println!("{}", "Проверка обновлений...".bright_white());
-    let response = reqwest::get(check_url).await?;
+    let response = reqwest::get(UPDATE_CHECK_URL).await?;
     let update_info: UpdateInfo = response.json().await?;
 
     let bin_dir = Path::new("bin");
@@ -60,18 +68,18 @@ async fn check_and_update() -> Result<(), Box<dyn Error>> {
         fs::read_to_string(&version_path)?
     } else {
         let default_version = "5.2".to_string();
-        println!("{} {}", "Создание начального файла версии:".blue(), default_version);
+        // println!("{} {}", "Создание начального файла версии:".blue(), default_version);
         fs::write(&version_path, &default_version)?;
         default_version
     };
 
     if compare_versions(&update_info.version, &local_version) {
         println!("{} {} (Текущая версия: {})!",
-                 "Доступна новая версия".green(),
-                 update_info.version.green().bold(),
+                 "Доступна НОВАЯ ВЕРСИЯ".custom_color(GREEN),
+                 update_info.version.custom_color(GREEN).bold(),
                  local_version.bright_black()
         );
-        println!("{}\n", "Загружаю...".yellow());
+        println!("{}\n", "Загружаю...".custom_color(ORANGE));
 
         // Create a client that follows redirects
         let client = reqwest::Client::builder()
@@ -103,17 +111,18 @@ async fn check_and_update() -> Result<(), Box<dyn Error>> {
         let mut file = File::create(&archive_path)?;
         file.write_all(&data)?;
 
-        pb.finish_with_message("Загрузка завершена".green().to_string());
+        pb.finish_with_message("Загрузка завершена".custom_color(GREEN).to_string());
 
         fs::write(&version_path, &update_info.version)?;
 
-        println!("\n\n{} {}", "ОБНОВЛЕНИЕ успешно загружено как:".blue().bold(), file_name.underline());
-        println!("{} {}.", "Откройте загруженный архив и распакуйте обновление".cyan(), "ВРУЧНУЮ".cyan().underline());
+        println!("\n\n{} {}", "ОБНОВЛЕНИЕ успешно загружено как:".custom_color(BLUE).bold(), file_name.underline());
+        println!("{} {}.", "Откройте загруженный архив и распакуйте обновление".custom_color(MAGENTA), "ВРУЧНУЮ".custom_color(MAGENTA).underline());
         println!("{}", "Мы не можем сделать это за вас автоматически, чтобы случайно не затереть ваши пре-конфиги/настройки которые вы вносили в свою сборку.".bright_black());
+        println!("\n{}", format!("Перейдите по адресу, чтобы посмотреть патч-ноут: {}!", MATERIAL_PAGE_URL.custom_color(ORANGE)).bright_black());
     } else {
         println!("{} {}",
-                 "У вас установлена последняя версия:".green(),
-                 local_version.green().bold()
+                 "У вас установлена последняя версия:".custom_color(GREEN),
+                 local_version.custom_color(GREEN).bold()
         );
     }
 
@@ -124,7 +133,7 @@ async fn check_and_update() -> Result<(), Box<dyn Error>> {
 async fn main() {
     match check_and_update().await {
         Ok(_) => println!("\n{}", "Проверка обновлений успешно завершена.".bright_black()),
-        Err(e) => eprintln!("\n{} {}", "Ошибка при проверке обновлений:".red().bold(), e),
+        Err(e) => eprintln!("\n{} {}\n{}", "Ошибка при проверке обновлений:".red().bold(), e, format!("Перейдите по ссылке и скачайте обновление вручную: {}!", MATERIAL_PAGE_URL)),
     }
 
     println!("{}", "Нажмите Enter для выхода...".bright_black());
