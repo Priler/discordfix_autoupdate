@@ -52,6 +52,24 @@ async fn download_file(client: &reqwest::Client, url: &str, pb: &ProgressBar) ->
     Ok(buffer)
 }
 
+fn extract_filename_from_url(url: &str) -> String {
+    // Сначала отделяем query string (всё после ?)
+    let base_url = url.split('?').next().unwrap_or(url);
+
+    // Затем берём последнюю часть пути
+    let filename = base_url.split('/')
+        .last()
+        .unwrap_or("update.zip")
+        .to_string();
+
+    // Если по какой-то причине имя пустое, используем значение по умолчанию
+    if filename.is_empty() {
+        return "update.zip".to_string();
+    }
+
+    filename
+}
+
 async fn check_and_update() -> Result<(), Box<dyn Error>> {
     println!("{}", "Проверка обновлений...".bright_white());
     let response = reqwest::get(UPDATE_CHECK_URL).await?;
@@ -63,12 +81,10 @@ async fn check_and_update() -> Result<(), Box<dyn Error>> {
     }
 
     let version_path = bin_dir.join("version.txt");
-
     let local_version = if version_path.exists() {
         fs::read_to_string(&version_path)?
     } else {
         let default_version = "5.2".to_string();
-        // println!("{} {}", "Создание начального файла версии:".blue(), default_version);
         fs::write(&version_path, &default_version)?;
         default_version
     };
@@ -81,33 +97,26 @@ async fn check_and_update() -> Result<(), Box<dyn Error>> {
         );
         println!("{}\n", "Загружаю...".custom_color(ORANGE));
 
-        // Create a client that follows redirects
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()?;
 
-        // First request to get the final URL after redirects
         let response = client.get(&update_info.url).send().await?;
         let final_url = response.url().to_string();
 
-        // Get filename from final URL
-        let file_name = final_url.split('/')
-            .last()
-            .ok_or("Не удалось извлечь имя файла из URL")?
-            .to_string();
+        // Извлекаем имя файла, игнорируя query string
+        let filename = extract_filename_from_url(&final_url);
 
-        // Create progress bar
         let pb = ProgressBar::new(0);
         pb.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec})")
             .expect("Progress bar template error")
             .progress_chars("#X-"));
 
-        // Download file with progress
         let data = download_file(&client, &final_url, &pb).await?;
 
-        // Save the file
-        let archive_path = Path::new(&file_name);
+        // Сохраняем файл с правильным именем
+        let archive_path = Path::new(&filename);
         let mut file = File::create(&archive_path)?;
         file.write_all(&data)?;
 
@@ -115,10 +124,18 @@ async fn check_and_update() -> Result<(), Box<dyn Error>> {
 
         fs::write(&version_path, &update_info.version)?;
 
-        println!("\n\n{} {}", "ОБНОВЛЕНИЕ успешно загружено как:".custom_color(BLUE).bold(), file_name.underline());
-        println!("{} {}.", "Откройте загруженный архив и распакуйте обновление".custom_color(MAGENTA), "ВРУЧНУЮ".custom_color(MAGENTA).underline());
-        println!("{}", "Мы не можем сделать это за вас автоматически, чтобы случайно не затереть ваши пре-конфиги/настройки которые вы вносили в свою сборку.".bright_black());
-        println!("\n{}", format!("Перейдите по адресу, чтобы посмотреть патч-ноут: {}!", MATERIAL_PAGE_URL.custom_color(ORANGE)).bright_black());
+        println!("\n\n{} {}",
+                 "ОБНОВЛЕНИЕ успешно загружено как:".custom_color(BLUE).bold(),
+                 filename.underline()
+        );
+        println!("{} {}.",
+                 "Откройте загруженный архив и распакуйте обновление".custom_color(MAGENTA),
+                 "ВРУЧНУЮ".custom_color(MAGENTA).underline()
+        );
+        println!("{}",
+                 "Мы не можем сделать это за вас автоматически, чтобы случайно не затереть ваши пре-конфиги/настройки которые вы вносили в свою сборку."
+                     .bright_black()
+        );
     } else {
         println!("{} {}",
                  "У вас установлена последняя версия:".custom_color(GREEN),
